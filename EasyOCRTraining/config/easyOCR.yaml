@@ -1,0 +1,87 @@
+seed_everything: 1111
+
+trainer:
+  logger:
+    class_path: lightning.pytorch.loggers.TensorBoardLogger
+    init_args:
+      save_dir: "E:/EasyOCROutput"
+      name: "EasyOCRTraining"
+
+  callbacks:
+    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+      init_args:
+        filename: "{epoch}-{val_loss:.4f}.best"
+        monitor: "val_loss"
+        mode: "min"
+        save_top_k: 1
+    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+      init_args:
+        filename: "{epoch}.last"
+        monitor: "step"
+        mode: "max"
+        save_top_k: 1
+
+  max_epochs: 2
+  accelerator: gpu
+  devices: 1
+  precision: 16-mixed
+  default_root_dir: "E:/EasyOCROutput/EasyOCRTraining"
+
+optimizer: 
+  class_path: torch.optim.Adam
+  init_args:
+    lr: 0.001
+
+# optimizer: 
+#   class_path: torch.optim.Adadelta
+#   init_args:
+#     lr: 1.0
+#     eps: 1e-8
+#     rho: 0.95
+
+
+model:
+  class_path: EasyOCRTraining.module.EasyOCRLitModule
+  init_args:
+    Prediction: "CTC"
+    batch_max_length: 40 #25
+    character: "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!#$%&'()*+,-./:;<=>?@[]^_`{|}~" # "0123456789abcdefghijklmnopqrstuvwxyz" #
+    pretrained_model: "E:/custom_example/custom_example.pth"   # "" # "E:/EasyOCRPretrained/iter_300000.pth"
+    decode: "greedy"
+    freeze_FeatureExtraction: false
+    freeze_SequenceModeling: false
+    
+    model:
+      class_path: EasyOCRTraining.model.EasyOCRNet
+      init_args:
+        Transformation: "None"
+        FeatureExtraction: "VGG"
+        SequenceModeling: "BiLSTM"
+        Prediction: "CTC"
+        input_channel: 1
+        output_channel: 512
+        hidden_size: 256
+        num_fiducial: 20
+        imgH: 32
+        imgW: 100
+
+
+
+data:
+  class_path: EasyOCRTraining.datamodule.EasyOCRDataModule
+  init_args:
+    data_dir: "E:/EasyOCRData"
+    batch_size: 1
+    num_workers: 4
+    imgH: 32
+    imgW: 100
+    PAD: true
+    contrast_adjust: 0.0
+
+
+
+# fit:
+  # ckpt_path: "E:/EasyOCROutput/EasyOCRTraining/version_0/checkpoints/epoch=4-val_loss=0.0213.best.ckpt"
+
+# test:
+#   ckpt_path: best
