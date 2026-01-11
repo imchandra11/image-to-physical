@@ -1,0 +1,17 @@
+# lightning.pytorch==2.1.0
+trainer:
+  num_sanity_val_steps: 0
+  max_epochs: 3
+  limit_train_batches: 5
+  limit_val_batches: 2
+  limit_test_batches: 3
+data:
+  init_args:
+    data_dir: E:\AIData\Bbox_Dataset_Sample
+model:
+  init_args:
+    detection_threshold: 0.2
+    visualize_training_images: true 
+# lr_scheduler:
+#   init_args:
+#     total_steps: 500

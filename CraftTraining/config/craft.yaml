@@ -1,0 +1,229 @@
+# lightning.pytorch==2.1.0
+seed_everything: true
+
+trainer:
+  callbacks:
+
+    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+      init_args:
+        filename: "{epoch}-{val_loss:.4f}.best"
+        monitor: "val_loss"
+        mode: "min"
+        save_top_k: 1
+        verbose: true
+        save_on_train_epoch_end: false
+
+    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+      init_args:
+        filename: "{epoch}.last"
+        monitor: "step"
+        mode: "max"
+        save_top_k: 1
+        verbose: true
+        save_on_train_epoch_end: false
+
+  logger:
+    class_path: lightning.pytorch.loggers.TensorBoardLogger
+    init_args:
+      save_dir: "E:/CraftOutput"
+      name: "CraftTraining"
+      default_hp_metric: false
+
+  max_epochs: &me 50   
+  num_sanity_val_steps: 0
+  check_val_every_n_epoch: 1
+  log_every_n_steps: 1
+  accelerator: gpu #auto
+  devices: 1 #auto
+  precision: 16-mixed #32    #(use "16-mixed" for GPU AMP)
+  default_root_dir: "E:/CraftOutput/CraftTraining"
+
+
+model:
+  class_path: CraftTraining.module.CraftLightningModule
+  init_args:
+    save_dir: "E:/CraftOutput"
+    name: "CraftTraining"
+    visualize_training_images: true
+    save_predicted_images: true
+    pretrained_model: "E:/craft_mlt_25k/craft_mlt_25k.pth"  # "" #"E:/CRAFT_pretrained/craft_mlt_25k.pth"
+    model:
+      class_path: CraftTraining.model.CraftNet
+      init_args:
+        in_ch: 3
+        backbone: vgg16_bn
+        pretrained: false #true
+        freeze_until: null #"conv2" # "conv3"   # freeze early stages up to conv2 (common practice)
+        feature_extract: false
+        head_channels: 128
+
+# OPTIMIZER & LR SCHEDULER
+optimizer:
+  class_path: torch.optim.Adam
+  init_args:
+    lr: 0.0001
+    weight_decay: 0.00001
+
+lr_scheduler:
+  class_path: torch.optim.lr_scheduler.OneCycleLR
+  init_args:
+    max_lr: 0.001
+    total_steps: *me #120   # (num_samples / batch_size) * max_epochs
+    pct_start: 0.1
+
+# DATA / AUGMENTATION / GAUSSIAN TARGETS
+data:
+  class_path: CraftTraining.datamodule.CraftDataModule
+  init_args:
+    data_dir: "E:/CraftData/data"
+    batch_size: 3
+    num_workers: 0
+    resize: 512
+    pin_memory: true
+    persistent_workers: true #false
+
+    # Gaussian map configuration
+    gauss_cfg:
+      gauss_init_size: 200
+      gauss_sigma: 10
+      enlarge_region: [0.2, 0.2]
+      enlarge_affinity: [0.25, 0.25]
+      min_sigma: 1.0
+    # Data augmentation configuration
+    data_cfg:
+      custom_aug:
+        random_scale:
+          range: [1.0, 1.5, 2.0]
+          option: false
+        random_rotate:
+          max_angle: 20
+          option: true
+        random_crop:
+          option: true
+          scale: [0.7, 0.9]
+        random_horizontal_flip:
+          option: true
+        random_colorjitter:
+          brightness: 0.2
+          contrast: 0.2
+          saturation: 0.2
+          hue: 0.02
+          option: true
+    test_cfg:
+          text_threshold: 0.65
+          link_threshold: 0.4
+          low_text: 0.3
+          vis_opt: true
+
+
+fit:
+  ckpt_path: null
+
+
+# TESTING CONFIG
+test:
+  ckpt_path: best
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# # lightning.pytorch==2.1.0
+# seed_everything: true
+
+# trainer:
+#   max_epochs: &me 3
+#   devices: 1
+#   accelerator: gpu
+#   precision: 16
+#   log_every_n_steps: 1
+#   check_val_every_n_epoch: 1
+#   num_sanity_val_steps: 1
+#   callbacks:
+#     - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+#       init_args:
+#         filename: "{epoch}-{val_loss:.2f}.best"
+#         monitor: "val_loss"
+#         mode: "min"
+#         save_top_k: 1
+#         verbose: true
+#         save_on_train_epoch_end: false
+#     - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+#       init_args:
+#         filename: "{epoch}.last"
+#         monitor: "step"
+#         mode: "max"
+#         save_top_k: 1
+#         verbose: true
+#         save_on_train_epoch_end: false
+#   logger:
+#     class_path: lightning.pytorch.loggers.TensorBoardLogger
+#     init_args:
+#       save_dir: E:\CraftOutput
+#       name: CraftTraining
+#       default_hp_metric: false
+
+# model:
+#   class_path: module.CraftLitModule
+#   init_args:
+#     backbone: vgg
+#     pretrained_weights: null
+#     output_channels: 2
+#     freeze_layers: []
+
+# optimizer:
+#   class_path: torch.optim.Adam
+#   init_args:
+#     lr: 0.0001
+#     weight_decay: 0.0001
+
+# lr_scheduler:
+#   class_path: torch.optim.lr_scheduler.CosineAnnealingLR
+#   init_args:
+#     T_max: *me
+
+# # -------------------------------
+# # Data settings
+# # -------------------------------
+# data:
+#   class_path: datamodule.CraftDataModule
+#   init_args:
+#     train_root: "E:/CraftData/data/Training/Input"
+#     train_label: "E:/CraftData/data/Training/Output"
+#     val_root: "E:/CraftData/data/Validation/Input"
+#     val_label: "E:/CraftData/data/Validation/Output"
+#     test_root: "E:/CraftData/data/Testing/Input"
+#     test_label: "E:/CraftData/data/Testing/Output"
+#     img_size: 1280
+#     batch_size: 2
+#     num_workers: 2
+
+
+# # -------------------------------
+# # Testing
+# # -------------------------------
+# test:
+#   ckpt_path: best   # or "last" or an absolute path
+
+
+
+# predict_output: "CraftTraining/predictions"

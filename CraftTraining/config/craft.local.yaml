@@ -1,0 +1,20 @@
+trainer:
+  max_epochs: 3
+
+model:
+  init_args:
+    visualize_training_images: true
+    save_predicted_images: true
+    model:
+      init_args:
+        backbone: vgg16_bn
+        pretrained: true
+        freeze_until:    "conv2" # "conv3"   # freeze early stages up to conv2 (common practice)
+
+data:
+  init_args:
+    data_dir: "E:/CraftData/data"
+    batch_size: 3
+    resize: 512
+   
+ 
