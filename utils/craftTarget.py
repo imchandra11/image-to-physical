@@ -58,6 +58,76 @@ def _scaled_sigma_for_poly(poly: np.ndarray, gauss_init_size: float, gauss_sigma
     return max(float(min_sigma), sigma)
 
 
+def split_polygon_into_two(poly: np.ndarray, gap_ratio: float = 0.15) -> List[np.ndarray]:
+    """
+    Split a single quadrilateral polygon into two sub-polygons along its longer axis.
+    Adds a gap between the two halves to prevent visual merging after Gaussian blur.
+
+    The annotations in this project are axis-aligned rectangles (4 points),
+    so we derive two rectangles from the bounding box:
+
+    - If width >= height  -> split into LEFT and RIGHT halves.
+    - If width < height   -> split into TOP and BOTTOM halves.
+
+    Args:
+        poly: np.ndarray of shape (4, 2), float32
+        gap_ratio: Fraction of the split dimension to use as gap (default 0.15 = 15%)
+    """
+    if poly.shape != (4, 2):
+        poly = poly.reshape(4, 2)
+
+    left, top, right, bottom = _bbox_of_poly(poly.astype(np.float32))
+    w = max(1.0, float(right - left))
+    h = max(1.0, float(bottom - top))
+
+    if w >= h:
+        # Vertical split into left and right halves with gap
+        mid_x = (left + right) / 2.0
+        gap = w * gap_ratio / 2.0  # Half gap on each side of center
+        poly1 = np.array(
+            [
+                [left, top],
+                [mid_x - gap, top],
+                [mid_x - gap, bottom],
+                [left, bottom],
+            ],
+            dtype=np.float32,
+        )
+        poly2 = np.array(
+            [
+                [mid_x + gap, top],
+                [right, top],
+                [right, bottom],
+                [mid_x + gap, bottom],
+            ],
+            dtype=np.float32,
+        )
+    else:
+        # Horizontal split into top and bottom halves with gap
+        mid_y = (top + bottom) / 2.0
+        gap = h * gap_ratio / 2.0  # Half gap on each side of center
+        poly1 = np.array(
+            [
+                [left, top],
+                [right, top],
+                [right, mid_y - gap],
+                [left, mid_y - gap],
+            ],
+            dtype=np.float32,
+        )
+        poly2 = np.array(
+            [
+                [left, mid_y + gap],
+                [right, mid_y + gap],
+                [right, bottom],
+                [left, bottom],
+            ],
+            dtype=np.float32,
+        )
+
+    return [poly1, poly2]
+
+
 def generate_region_affinity_maps(
     image_size: Tuple[int, int],
     polys: List[np.ndarray],

@@ -5,7 +5,7 @@ import cv2
 import torch
 from torch.utils.data import Dataset
 from utils.craftImageaugmentation import get_transform
-from utils.craftTarget import generate_region_affinity_maps
+from utils.craftTarget import generate_region_affinity_maps, split_polygon_into_two
 
 IMAGE_INPUT_FOLDER = "Input"
 IMAGE_OUTPUT_FOLDER = "Output"
@@ -106,10 +106,17 @@ class CraftDataset(Dataset):
         parsed = self._read_label_file(image_name)
         polys_orig = [p["poly"].astype(np.float32) for p in parsed]
 
+        # Each symbol polygon is split into two pseudo-character polygons
+        # so that the model treats every symbol as two characters.
+        char_polys_orig: List[np.ndarray] = []
+        for poly in polys_orig:
+            sub_polys = split_polygon_into_two(poly)
+            char_polys_orig.extend(sub_polys)
+
         # Apply augmentations
         if self.transforms is not None:
             try:
-                img_bgr, polys_orig = self.transforms(img_bgr, polys_orig)
+                img_bgr, char_polys_orig = self.transforms(img_bgr, char_polys_orig)
             except Exception as e:
                 print(f"Warning: transform failed for {image_name}: {e}")
 
@@ -120,14 +127,22 @@ class CraftDataset(Dataset):
         pad_offset = (0, 0)
         if self.resize is not None:
             img_gray_proc, scale, pad_offset = self._resize_keep_aspect_and_pad(img_gray_raw, self.resize)
-            polys_scaled = [(p * scale + np.array(pad_offset)).astype(np.float32) for p in polys_orig]
+            polys_scaled = [(p * scale + np.array(pad_offset)).astype(np.float32) for p in char_polys_orig]
             canvas_h = canvas_w = self.resize
         else:
             img_gray_proc = img_gray_raw.copy()
-            polys_scaled = [p.astype(np.float32) for p in polys_orig]
+            polys_scaled = [p.astype(np.float32) for p in char_polys_orig]
             canvas_h, canvas_w = img_gray_proc.shape[:2]
 
-        words = [[i] for i in range(len(polys_scaled))]
+        # Build word groupings so that each original symbol contributes a pair of
+        # pseudo-characters, encouraging an affinity link between the two halves.
+        num_symbols = len(parsed)
+        words: List[List[int]] = []
+        for k in range(num_symbols):
+            i1 = 2 * k
+            i2 = 2 * k + 1
+            if i2 < len(polys_scaled):
+                words.append([i1, i2])
         region_map, affinity_map = generate_region_affinity_maps(
             (canvas_h, canvas_w), polys_scaled, words, gauss_cfg=self.gauss_cfg
         )

@@ -25,28 +25,28 @@ trainer:
   logger:
     class_path: lightning.pytorch.loggers.TensorBoardLogger
     init_args:
-      save_dir: "E:/CraftOutput"
+      save_dir: "C:/CraftOutput"
       name: "CraftTraining"
       default_hp_metric: false
 
-  max_epochs: &me 50   
+  max_epochs: &me 2   
   num_sanity_val_steps: 0
   check_val_every_n_epoch: 1
   log_every_n_steps: 1
-  accelerator: gpu #auto
-  devices: 1 #auto
-  precision: 16-mixed #32    #(use "16-mixed" for GPU AMP)
-  default_root_dir: "E:/CraftOutput/CraftTraining"
+  accelerator: auto  #gpu
+  devices: auto  #1
+  precision: 32    #(use "16-mixed" for GPU AMP)
+  default_root_dir: "C:/CraftOutput/CraftTraining"
 
 
 model:
   class_path: CraftTraining.module.CraftLightningModule
   init_args:
-    save_dir: "E:/CraftOutput"
+    save_dir: "C:/CraftOutput"
     name: "CraftTraining"
     visualize_training_images: true
     save_predicted_images: true
-    pretrained_model: "E:/craft_mlt_25k/craft_mlt_25k.pth"  # "" #"E:/CRAFT_pretrained/craft_mlt_25k.pth"
+    pretrained_model: "" #"E:/CRAFT_pretrained/craft_mlt_25k.pth"  "E:/craft_mlt_25k/craft_mlt_25k.pth"  #
     model:
       class_path: CraftTraining.model.CraftNet
       init_args:
@@ -75,7 +75,7 @@ lr_scheduler:
 data:
   class_path: CraftTraining.datamodule.CraftDataModule
   init_args:
-    data_dir: "E:/CraftData/data"
+    data_dir: "C:/CraftData/data"
     batch_size: 3
     num_workers: 0
     resize: 512
