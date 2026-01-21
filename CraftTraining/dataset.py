@@ -5,7 +5,11 @@ import cv2
 import torch
 from torch.utils.data import Dataset
 from utils.craftImageaugmentation import get_transform
-from utils.craftTarget import generate_region_affinity_maps, split_polygon_into_two
+from utils.craftTarget import (
+    generate_region_affinity_maps,
+    split_poly_long_axis,
+    split_poly_grid_2x2,
+)
 
 IMAGE_INPUT_FOLDER = "Input"
 IMAGE_OUTPUT_FOLDER = "Output"
@@ -57,6 +61,15 @@ class CraftDataset(Dataset):
 
         self.resize = resize
         self.gauss_cfg = gauss_cfg or {}
+        self.data_cfg = data_cfg or {}
+        
+        # Read region mode flag: 0=word/char, 1=symbols no split, 2/3/4=symbols with splits
+        region_mode = int(self.data_cfg.get("region", 0))
+        # Clamp to valid range [0, 4]
+        if region_mode < 0 or region_mode > 4:
+            print(f"Warning: region mode {region_mode} out of range [0,4], clamping to {max(0, min(4, region_mode))}")
+            region_mode = max(0, min(4, region_mode))
+        self.region_mode = region_mode
 
     def __len__(self):
         return len(self.files)
@@ -106,12 +119,27 @@ class CraftDataset(Dataset):
         parsed = self._read_label_file(image_name)
         polys_orig = [p["poly"].astype(np.float32) for p in parsed]
 
-        # Each symbol polygon is split into two pseudo-character polygons
-        # so that the model treats every symbol as two characters.
-        char_polys_orig: List[np.ndarray] = []
-        for poly in polys_orig:
-            sub_polys = split_polygon_into_two(poly)
-            char_polys_orig.extend(sub_polys)
+        # Branch based on region_mode
+        if self.region_mode == 0:
+            # Word/character dataset: use polygons as-is, no splitting
+            char_polys_orig = polys_orig.copy()
+        else:
+            # Symbol dataset: split based on region_mode
+            char_polys_orig: List[np.ndarray] = []
+            for poly in polys_orig:
+                if self.region_mode == 1:
+                    # No split, keep as single polygon
+                    parts = [poly]
+                elif self.region_mode == 2 or self.region_mode == 3:
+                    # Split into 2 or 3 parts along long axis
+                    parts = split_poly_long_axis(poly, self.region_mode)
+                elif self.region_mode == 4:
+                    # Split into 4 parts (2x2 grid)
+                    parts = split_poly_grid_2x2(poly)
+                else:
+                    # Fallback (shouldn't happen due to clamping)
+                    parts = [poly]
+                char_polys_orig.extend(parts)
 
         # Apply augmentations
         if self.transforms is not None:
@@ -134,15 +162,36 @@ class CraftDataset(Dataset):
             polys_scaled = [p.astype(np.float32) for p in char_polys_orig]
             canvas_h, canvas_w = img_gray_proc.shape[:2]
 
-        # Build word groupings so that each original symbol contributes a pair of
-        # pseudo-characters, encouraging an affinity link between the two halves.
-        num_symbols = len(parsed)
+        # Build word groupings based on region_mode
         words: List[List[int]] = []
-        for k in range(num_symbols):
-            i1 = 2 * k
-            i2 = 2 * k + 1
-            if i2 < len(polys_scaled):
-                words.append([i1, i2])
+        if self.region_mode == 0:
+            # Word/character mode: each polygon is independent (or could group by text if needed)
+            words = [[i] for i in range(len(polys_scaled))]
+        else:
+            # Symbol mode: group all segments of each symbol together
+            num_symbols = len(parsed)
+            idx = 0
+            for k in range(num_symbols):
+                # Determine how many parts this symbol was split into
+                if self.region_mode == 1:
+                    num_parts = 1
+                elif self.region_mode == 2:
+                    num_parts = 2
+                elif self.region_mode == 3:
+                    num_parts = 3
+                elif self.region_mode == 4:
+                    num_parts = 4
+                else:
+                    num_parts = 1
+                
+                # Create word group for this symbol's segments
+                if idx + num_parts <= len(polys_scaled):
+                    words.append(list(range(idx, idx + num_parts)))
+                    idx += num_parts
+                else:
+                    # Fallback if indices don't match (shouldn't happen)
+                    words.append([idx])
+                    idx += 1
         region_map, affinity_map = generate_region_affinity_maps(
             (canvas_h, canvas_w), polys_scaled, words, gauss_cfg=self.gauss_cfg
         )
@@ -168,5 +217,6 @@ class CraftDataset(Dataset):
             "scale": scale,
             "pad_offset": pad_offset,
             "raw_image": img_gray_raw,
+            "region_mode": self.region_mode,  # Store for visualization
         }
         return img_tensor, target, image_name

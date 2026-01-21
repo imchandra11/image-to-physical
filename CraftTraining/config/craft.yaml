@@ -91,6 +91,8 @@ data:
       min_sigma: 1.0
     # Data augmentation configuration
     data_cfg:
+      # Region mode: 0=word/char dataset (no split), 1=symbols no split, 2=split into 2, 3=split into 3, 4=split into 4 (2x2 grid)
+      region: 3
       custom_aug:
         random_scale:
           range: [1.0, 1.5, 2.0]

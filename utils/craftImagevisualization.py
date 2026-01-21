@@ -55,6 +55,7 @@ def save_prediction_visual(image_path, boxes, scores, out_path):
 def visualizeOneBatchImages(batch, max_images=5):
     """
     Visualize one batch of images with bounding polygons instead of axis-aligned boxes.
+    Uses region_mode-aware colors if available.
     """
     images, targets, names = batch
     loopMax = min(len(images), max_images)
@@ -64,15 +65,29 @@ def visualizeOneBatchImages(batch, max_images=5):
         image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
 
         target = targets[i]
+        region_mode = target.get("region_mode", 0)
+        
+        # Define color palette based on region_mode
+        palette_sizes = {0: 1, 1: 1, 2: 2, 3: 3, 4: 4}
+        palette_len = palette_sizes.get(region_mode, 1)
+        color_palette = [
+            (0, 0, 255),    # Red
+            (0, 255, 0),    # Green
+            (255, 0, 0),    # Blue
+            (0, 255, 255),  # Yellow
+        ]
+        
         polys = target.get("polys", None)
         if polys is None:
             boxes = target["boxes"].cpu().numpy().astype(np.int32)
-            for box in boxes:
-                cv2.rectangle(image, (box[0], box[1]), (box[2], box[3]), (0, 0, 255), 2)
+            for idx, box in enumerate(boxes):
+                color = color_palette[idx % palette_len]
+                cv2.rectangle(image, (box[0], box[1]), (box[2], box[3]), color, 2)
         else:
-            for p in polys:
+            for idx, p in enumerate(polys):
                 pts = p.reshape((-1, 1, 2)).astype(np.int32)
-                cv2.polylines(image, [pts], isClosed=True, color=(0, 0, 255), thickness=1)
+                color = color_palette[idx % palette_len]
+                cv2.polylines(image, [pts], isClosed=True, color=color, thickness=2)
 
         cv2.imshow(f"Augmented Image {i}", image)
         cv2.waitKey(0)
@@ -114,15 +129,33 @@ def visualizeOneBatchWithMaps(batch, max_images=5):
 
         target = targets[i]
         polys = target.get("polys", [])
+        region_mode = target.get("region_mode", 0)
 
-        # Draw polygons on a copy of the base image
-        # Use alternating colors: red for even indices, green for odd indices
-        # This makes it clear which two polygons belong to the same symbol
+        # Draw polygons on a copy of the base image with region_mode-aware colors
         img_with_polys = base_bgr.copy()
-        colors = [(0, 0, 255), (0, 255, 0)]  # Red and Green in BGR format
+        
+        # Define color palette based on region_mode
+        # 1 color: Red, 2 colors: Red+Green, 3 colors: Red+Green+Blue, 4 colors: Red+Green+Blue+Yellow
+        palette_sizes = {
+            0: 1,  # Word mode: single color
+            1: 1,  # Symbols no split: single color
+            2: 2,  # 2 splits: two colors
+            3: 3,  # 3 splits: three colors
+            4: 4,  # 4 splits: four colors
+        }
+        palette_len = palette_sizes.get(region_mode, 1)
+        
+        # Color palette in BGR format: Red, Green, Blue, Yellow
+        color_palette = [
+            (0, 0, 255),    # Red
+            (0, 255, 0),    # Green
+            (255, 0, 0),    # Blue
+            (0, 255, 255),  # Yellow
+        ]
+        
         for idx, p in enumerate(polys):
             pts = np.asarray(p).reshape((-1, 1, 2)).astype(np.int32)
-            color = colors[idx % 2]  # Alternate between red and green
+            color = color_palette[idx % palette_len]
             cv2.polylines(img_with_polys, [pts], isClosed=True, color=color, thickness=2)
 
         # Extract region and affinity maps (1, H, W) -> (H, W)
@@ -189,6 +222,8 @@ def visualizeOneBatchWithMapsMatplotlib(batch, max_images=5):
         target = targets[i]
         region = target["region"].squeeze().detach().cpu().numpy()
         affinity = target["affinity"].squeeze().detach().cpu().numpy()
+        region_mode = target.get("region_mode", 0)
+        polys = target.get("polys", [])
 
         # Ensure region/affinity same spatial size as image for display
         h_img, w_img = base_gray.shape[:2]
@@ -203,8 +238,27 @@ def visualizeOneBatchWithMapsMatplotlib(batch, max_images=5):
 
         fig, axes = plt.subplots(1, 3, figsize=(15, 4))
 
-        # Original image
+        # Original image with optional polygon overlay
         axes[0].imshow(base_gray, cmap="gray")
+        
+        # Overlay polygons with region_mode-aware colors if available
+        if len(polys) > 0:
+            palette_sizes = {0: 1, 1: 1, 2: 2, 3: 3, 4: 4}
+            palette_len = palette_sizes.get(region_mode, 1)
+            # Matplotlib uses RGB, so convert from BGR: Red, Green, Blue, Yellow
+            color_palette_rgb = [
+                (1.0, 0.0, 0.0),    # Red
+                (0.0, 1.0, 0.0),    # Green
+                (0.0, 0.0, 1.0),    # Blue
+                (1.0, 1.0, 0.0),    # Yellow
+            ]
+            for idx, p in enumerate(polys):
+                pts = np.asarray(p).reshape((-1, 2))
+                color = color_palette_rgb[idx % palette_len]
+                # Close the polygon by appending first point
+                pts_closed = np.vstack([pts, pts[0:1]])
+                axes[0].plot(pts_closed[:, 0], pts_closed[:, 1], color=color, linewidth=2, alpha=0.7)
+        
         axes[0].set_title("Original Image")
         axes[0].axis("off")
 

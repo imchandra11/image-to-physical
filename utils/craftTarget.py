@@ -58,10 +58,124 @@ def _scaled_sigma_for_poly(poly: np.ndarray, gauss_init_size: float, gauss_sigma
     return max(float(min_sigma), sigma)
 
 
+def split_poly_long_axis(poly: np.ndarray, n_parts: int) -> List[np.ndarray]:
+    """
+    Split a polygon into n_parts equal segments along its longer axis.
+    No gap between segments (contiguous).
+
+    Args:
+        poly: np.ndarray of shape (4, 2), float32
+        n_parts: Number of parts to split into (2, 3, etc.)
+
+    Returns:
+        List of n_parts polygons, each shape (4, 2), float32.
+    """
+    if poly.shape != (4, 2):
+        poly = poly.reshape(4, 2)
+
+    left, top, right, bottom = _bbox_of_poly(poly.astype(np.float32))
+    w = max(1.0, float(right - left))
+    h = max(1.0, float(bottom - top))
+
+    parts = []
+    if w >= h:
+        # Split width into n_parts equal segments
+        segment_width = w / float(n_parts)
+        for i in range(n_parts):
+            x_start = left + i * segment_width
+            x_end = left + (i + 1) * segment_width
+            part = np.array(
+                [
+                    [x_start, top],
+                    [x_end, top],
+                    [x_end, bottom],
+                    [x_start, bottom],
+                ],
+                dtype=np.float32,
+            )
+            parts.append(part)
+    else:
+        # Split height into n_parts equal segments
+        segment_height = h / float(n_parts)
+        for i in range(n_parts):
+            y_start = top + i * segment_height
+            y_end = top + (i + 1) * segment_height
+            part = np.array(
+                [
+                    [left, y_start],
+                    [right, y_start],
+                    [right, y_end],
+                    [left, y_end],
+                ],
+                dtype=np.float32,
+            )
+            parts.append(part)
+
+    return parts
+
+
+def split_poly_grid_2x2(poly: np.ndarray) -> List[np.ndarray]:
+    """
+    Split a polygon into four parts via a 2x2 grid (horizontal + vertical center splits).
+
+    Args:
+        poly: np.ndarray of shape (4, 2), float32
+
+    Returns:
+        List of 4 polygons: [top-left, top-right, bottom-left, bottom-right], each shape (4, 2), float32.
+    """
+    if poly.shape != (4, 2):
+        poly = poly.reshape(4, 2)
+
+    left, top, right, bottom = _bbox_of_poly(poly.astype(np.float32))
+    mid_x = (left + right) / 2.0
+    mid_y = (top + bottom) / 2.0
+
+    top_left = np.array(
+        [
+            [left, top],
+            [mid_x, top],
+            [mid_x, mid_y],
+            [left, mid_y],
+        ],
+        dtype=np.float32,
+    )
+    top_right = np.array(
+        [
+            [mid_x, top],
+            [right, top],
+            [right, mid_y],
+            [mid_x, mid_y],
+        ],
+        dtype=np.float32,
+    )
+    bottom_left = np.array(
+        [
+            [left, mid_y],
+            [mid_x, mid_y],
+            [mid_x, bottom],
+            [left, bottom],
+        ],
+        dtype=np.float32,
+    )
+    bottom_right = np.array(
+        [
+            [mid_x, mid_y],
+            [right, mid_y],
+            [right, bottom],
+            [mid_x, bottom],
+        ],
+        dtype=np.float32,
+    )
+
+    return [top_left, top_right, bottom_left, bottom_right]
+
+
 def split_polygon_into_two(poly: np.ndarray, gap_ratio: float = 0.15) -> List[np.ndarray]:
     """
     Split a single quadrilateral polygon into two sub-polygons along its longer axis.
     Adds a gap between the two halves to prevent visual merging after Gaussian blur.
+    (Legacy function, kept for backward compatibility)
 
     The annotations in this project are axis-aligned rectangles (4 points),
     so we derive two rectangles from the bounding box:
@@ -72,6 +186,9 @@ def split_polygon_into_two(poly: np.ndarray, gap_ratio: float = 0.15) -> List[np
     Args:
         poly: np.ndarray of shape (4, 2), float32
         gap_ratio: Fraction of the split dimension to use as gap (default 0.15 = 15%)
+
+    Returns:
+        List of two np.ndarray polygons, each shape (4, 2), float32.
     """
     if poly.shape != (4, 2):
         poly = poly.reshape(4, 2)
