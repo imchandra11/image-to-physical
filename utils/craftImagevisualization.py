@@ -66,28 +66,55 @@ def visualizeOneBatchImages(batch, max_images=5):
 
         target = targets[i]
         region_mode = target.get("region_mode", 0)
+        words = target.get("words", [])
         
-        # Define color palette based on region_mode
-        palette_sizes = {0: 1, 1: 1, 2: 2, 3: 3, 4: 4}
-        palette_len = palette_sizes.get(region_mode, 1)
+        # Color palette in BGR format
         color_palette = [
             (0, 0, 255),    # Red
             (0, 255, 0),    # Green
             (255, 0, 0),    # Blue
             (0, 255, 255),  # Yellow
+            (255, 255, 0),  # Cyan
+            (255, 0, 255),  # Magenta
+            (128, 0, 128),  # Purple
+            (255, 165, 0),  # Orange
         ]
         
         polys = target.get("polys", None)
         if polys is None:
             boxes = target["boxes"].cpu().numpy().astype(np.int32)
-            for idx, box in enumerate(boxes):
-                color = color_palette[idx % palette_len]
-                cv2.rectangle(image, (box[0], box[1]), (box[2], box[3]), color, 2)
+            if region_mode == 0 and len(words) > 0:
+                # Word mode: different color per word
+                for word_idx, word_group in enumerate(words):
+                    word_color = color_palette[word_idx % len(color_palette)]
+                    for char_idx in word_group:
+                        if char_idx < len(boxes):
+                            cv2.rectangle(image, (boxes[char_idx][0], boxes[char_idx][1]), 
+                                         (boxes[char_idx][2], boxes[char_idx][3]), word_color, 2)
+            else:
+                # Symbol modes
+                palette_sizes = {1: 1, 2: 2, 3: 3, 4: 4}
+                palette_len = palette_sizes.get(region_mode, 1)
+                for idx, box in enumerate(boxes):
+                    color = color_palette[idx % palette_len]
+                    cv2.rectangle(image, (box[0], box[1]), (box[2], box[3]), color, 2)
         else:
-            for idx, p in enumerate(polys):
-                pts = p.reshape((-1, 1, 2)).astype(np.int32)
-                color = color_palette[idx % palette_len]
-                cv2.polylines(image, [pts], isClosed=True, color=color, thickness=2)
+            if region_mode == 0 and len(words) > 0:
+                # Word mode: different color per word
+                for word_idx, word_group in enumerate(words):
+                    word_color = color_palette[word_idx % len(color_palette)]
+                    for char_idx in word_group:
+                        if char_idx < len(polys):
+                            pts = polys[char_idx].reshape((-1, 1, 2)).astype(np.int32)
+                            cv2.polylines(image, [pts], isClosed=True, color=word_color, thickness=2)
+            else:
+                # Symbol modes
+                palette_sizes = {1: 1, 2: 2, 3: 3, 4: 4}
+                palette_len = palette_sizes.get(region_mode, 1)
+                for idx, p in enumerate(polys):
+                    pts = p.reshape((-1, 1, 2)).astype(np.int32)
+                    color = color_palette[idx % palette_len]
+                    cv2.polylines(image, [pts], isClosed=True, color=color, thickness=2)
 
         cv2.imshow(f"Augmented Image {i}", image)
         cv2.waitKey(0)
@@ -130,33 +157,45 @@ def visualizeOneBatchWithMaps(batch, max_images=5):
         target = targets[i]
         polys = target.get("polys", [])
         region_mode = target.get("region_mode", 0)
+        words = target.get("words", [])  # Word groupings for region_mode == 0
 
         # Draw polygons on a copy of the base image with region_mode-aware colors
         img_with_polys = base_bgr.copy()
         
-        # Define color palette based on region_mode
-        # 1 color: Red, 2 colors: Red+Green, 3 colors: Red+Green+Blue, 4 colors: Red+Green+Blue+Yellow
-        palette_sizes = {
-            0: 1,  # Word mode: single color
-            1: 1,  # Symbols no split: single color
-            2: 2,  # 2 splits: two colors
-            3: 3,  # 3 splits: three colors
-            4: 4,  # 4 splits: four colors
-        }
-        palette_len = palette_sizes.get(region_mode, 1)
-        
-        # Color palette in BGR format: Red, Green, Blue, Yellow
+        # Color palette in BGR format: Red, Green, Blue, Yellow, Cyan, Magenta, etc.
         color_palette = [
             (0, 0, 255),    # Red
             (0, 255, 0),    # Green
             (255, 0, 0),    # Blue
             (0, 255, 255),  # Yellow
+            (255, 255, 0),  # Cyan
+            (255, 0, 255),  # Magenta
+            (128, 0, 128),  # Purple
+            (255, 165, 0),  # Orange
         ]
         
-        for idx, p in enumerate(polys):
-            pts = np.asarray(p).reshape((-1, 1, 2)).astype(np.int32)
-            color = color_palette[idx % palette_len]
-            cv2.polylines(img_with_polys, [pts], isClosed=True, color=color, thickness=2)
+        if region_mode == 0 and len(words) > 0:
+            # Word mode: use different color for each word, same color for characters within word
+            for word_idx, word_group in enumerate(words):
+                word_color = color_palette[word_idx % len(color_palette)]
+                for char_idx in word_group:
+                    if char_idx < len(polys):
+                        pts = np.asarray(polys[char_idx]).reshape((-1, 1, 2)).astype(np.int32)
+                        cv2.polylines(img_with_polys, [pts], isClosed=True, color=word_color, thickness=2)
+        else:
+            # Symbol modes: use palette based on region_mode
+            palette_sizes = {
+                1: 1,  # Symbols no split: single color
+                2: 2,  # 2 splits: two colors
+                3: 3,  # 3 splits: three colors
+                4: 4,  # 4 splits: four colors
+            }
+            palette_len = palette_sizes.get(region_mode, 1)
+            
+            for idx, p in enumerate(polys):
+                pts = np.asarray(p).reshape((-1, 1, 2)).astype(np.int32)
+                color = color_palette[idx % palette_len]
+                cv2.polylines(img_with_polys, [pts], isClosed=True, color=color, thickness=2)
 
         # Extract region and affinity maps (1, H, W) -> (H, W)
         region = target["region"].squeeze().detach().cpu().numpy()
@@ -243,21 +282,37 @@ def visualizeOneBatchWithMapsMatplotlib(batch, max_images=5):
         
         # Overlay polygons with region_mode-aware colors if available
         if len(polys) > 0:
-            palette_sizes = {0: 1, 1: 1, 2: 2, 3: 3, 4: 4}
-            palette_len = palette_sizes.get(region_mode, 1)
-            # Matplotlib uses RGB, so convert from BGR: Red, Green, Blue, Yellow
+            words = target.get("words", [])
+            # Matplotlib uses RGB
             color_palette_rgb = [
                 (1.0, 0.0, 0.0),    # Red
                 (0.0, 1.0, 0.0),    # Green
                 (0.0, 0.0, 1.0),    # Blue
                 (1.0, 1.0, 0.0),    # Yellow
+                (0.0, 1.0, 1.0),    # Cyan
+                (1.0, 0.0, 1.0),    # Magenta
+                (0.5, 0.0, 0.5),    # Purple
+                (1.0, 0.65, 0.0),   # Orange
             ]
-            for idx, p in enumerate(polys):
-                pts = np.asarray(p).reshape((-1, 2))
-                color = color_palette_rgb[idx % palette_len]
-                # Close the polygon by appending first point
-                pts_closed = np.vstack([pts, pts[0:1]])
-                axes[0].plot(pts_closed[:, 0], pts_closed[:, 1], color=color, linewidth=2, alpha=0.7)
+            
+            if region_mode == 0 and len(words) > 0:
+                # Word mode: different color per word
+                for word_idx, word_group in enumerate(words):
+                    word_color = color_palette_rgb[word_idx % len(color_palette_rgb)]
+                    for char_idx in word_group:
+                        if char_idx < len(polys):
+                            pts = np.asarray(polys[char_idx]).reshape((-1, 2))
+                            pts_closed = np.vstack([pts, pts[0:1]])
+                            axes[0].plot(pts_closed[:, 0], pts_closed[:, 1], color=word_color, linewidth=2, alpha=0.7)
+            else:
+                # Symbol modes
+                palette_sizes = {1: 1, 2: 2, 3: 3, 4: 4}
+                palette_len = palette_sizes.get(region_mode, 1)
+                for idx, p in enumerate(polys):
+                    pts = np.asarray(p).reshape((-1, 2))
+                    color = color_palette_rgb[idx % palette_len]
+                    pts_closed = np.vstack([pts, pts[0:1]])
+                    axes[0].plot(pts_closed[:, 0], pts_closed[:, 1], color=color, linewidth=2, alpha=0.7)
         
         axes[0].set_title("Original Image")
         axes[0].axis("off")

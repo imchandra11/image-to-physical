@@ -9,6 +9,7 @@ from utils.craftTarget import (
     generate_region_affinity_maps,
     split_poly_long_axis,
     split_poly_grid_2x2,
+    split_word_poly_into_characters,
 )
 
 IMAGE_INPUT_FOLDER = "Input"
@@ -118,11 +119,22 @@ class CraftDataset(Dataset):
 
         parsed = self._read_label_file(image_name)
         polys_orig = [p["poly"].astype(np.float32) for p in parsed]
+        transcriptions = [p.get("text", "") for p in parsed]  # Get transcriptions for word-level splitting
 
         # Branch based on region_mode
         if self.region_mode == 0:
-            # Word/character dataset: use polygons as-is, no splitting
-            char_polys_orig = polys_orig.copy()
+            # Word/character dataset: split each word polygon into character segments
+            # based on transcription length (CRAFT paper approach)
+            char_polys_orig: List[np.ndarray] = []
+            for poly, text in zip(polys_orig, transcriptions):
+                # Count characters in transcription (handle empty strings)
+                n_chars = len(text.strip()) if text.strip() else 1
+                if n_chars == 0:
+                    n_chars = 1  # Fallback: treat as single character if no transcription
+                
+                # Split word polygon into character segments
+                char_segments = split_word_poly_into_characters(poly, n_chars)
+                char_polys_orig.extend(char_segments)
         else:
             # Symbol dataset: split based on region_mode
             char_polys_orig: List[np.ndarray] = []
@@ -165,8 +177,25 @@ class CraftDataset(Dataset):
         # Build word groupings based on region_mode
         words: List[List[int]] = []
         if self.region_mode == 0:
-            # Word/character mode: each polygon is independent (or could group by text if needed)
-            words = [[i] for i in range(len(polys_scaled))]
+            # Word/character mode: group all character segments of each word together
+            # This creates affinity links between adjacent characters within the same word
+            char_idx = 0
+            for text in transcriptions:
+                # Count characters in transcription (same logic as splitting)
+                n_chars = len(text.strip()) if text.strip() else 1
+                if n_chars == 0:
+                    n_chars = 1
+                
+                # Group all character segments of this word together
+                if char_idx + n_chars <= len(polys_scaled):
+                    word_group = list(range(char_idx, char_idx + n_chars))
+                    words.append(word_group)
+                    char_idx += n_chars
+                else:
+                    # Fallback: add remaining characters
+                    if char_idx < len(polys_scaled):
+                        words.append([char_idx])
+                        char_idx += 1
         else:
             # Symbol mode: group all segments of each symbol together
             num_symbols = len(parsed)
@@ -218,5 +247,6 @@ class CraftDataset(Dataset):
             "pad_offset": pad_offset,
             "raw_image": img_gray_raw,
             "region_mode": self.region_mode,  # Store for visualization
+            "words": words,  # Store word groupings for visualization (optional)
         }
         return img_tensor, target, image_name
